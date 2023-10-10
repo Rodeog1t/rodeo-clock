@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<title>Afficher la date et l'heure en temps réel en javascript</title>
+	<style>
+		body {
+			background-color: black;
+			color: royalblue;
+			overflow: hidden;
+		}
+
+		.date {
+			width: 1920px;
+			height: 400px;
+			font-family: arial;
+			text-align: center;
+			font-size: 100pt;
+			font-weight: bold;
+		}
+
+		.countdown {
+			width: 1920px;
+			height: 400px;
+			font-family: arial;
+			text-align: center;
+			font-weight: bold;
+		}
+
+		.countdown-text {
+			color: white;
+			font-size: 70pt;
+		}
+
+		.countdown-clock {
+			font-size: 190pt;
+		}
+
+
+
+		.clock {
+			font-family: arial;
+			height: 360px;
+			text-align: center;
+			font-size: 280pt;
+			font-weight: bold;
+		}
+
+		.logo {
+			text-align: center;
+			position: absolute;
+			left: 452px;
+			top: 780px;
+			height: 240px;
+		}
+
+		.blink {
+			animation: blinker 1s linear infinite;
+		}
+
+		@keyframes blinker {
+			50% {
+				opacity: 0;
+			}
+		}
+
+		.red {
+			color: red;
+		}
+	</style>
+</head>
+
+<body>
+	<span>
+		<table>
+			<tr>
+				<td class="date" id="date"></td>
+				<td class="countdown" id="countdown">
+					<span class="countdown-text" id="countdown-text"></span>
+					<br />
+					<span class="countdown-clock red" id="countdown-clock"></span>
+				</td>
+			</tr>
+			<tr>
+				<td class="clock" id="clock"></td>
+			</tr>
+		</table>
+	</span>
+	<img class="logo" src="rodeoprod.png" />
+</body>
+
+<script>
+	const mois = new Array('Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre');
+	const jours = new Array('Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi');
+	const protocol = (window.location.protocol === 'https:') ? "wss://" : "ws://";
+	const ip = window.location.hostname;
+	const port = 81;
+	var socket = null;
+	var connecting = false;
+	var clock = {
+		absoluteTime: "",
+		playing: null,
+		targetDate: null,
+		countDownEnded: false,
+		description: ""
+	}
+
+	async function reconnect(msg) {
+		if (!ip) return false
+		if (!port) return false
+
+		if (connecting) return false
+		connecting = true;
+
+		try {
+			if (socket && (socket.readyState == WebSocket.OPEN)) {
+				socket.close()
+				while (socket.readyState != WebSocket.CLOSED)
+					await new Promise(resolve => setTimeout(resolve, 200));
+			}
+
+			//Socket null opening new one
+			socket = new WebSocket(protocol + ip + ":" + port, ["clock-control"]);
+
+			socket.onerror = function (e) {
+				connecting = false;
+				onWebSocketError(e)
+			};
+
+			socket.onopen = function (e) {
+				connecting = false;
+				//If msg need to be send 
+				if (msg)
+					this.send(msg);
+				onWebSocketOpen(e)
+
+				this.onclose = function (e) {
+					onWebSocketClose(e)
+				};
+
+				this.onmessage = function (e) {
+					onWebSocketMessage(e)
+				};
+			};
+			return true
+		}
+		catch (e) {
+			connecting = false;
+			onWebSocketError(e)
+			return false
+		}
+	}
+
+	function onWebSocketError(e) {
+		reconnect();
+	}
+
+	function onWebSocketOpen(e) {
+	}
+
+	function onWebSocketClose(e) {
+		reconnect();
+	}
+
+	function isConnected() {
+		if (!socket || (socket.readyState != WebSocket.OPEN))
+			return false
+		return true
+	}
+
+	async function send(msg) {
+		if (!isConnected())
+			return false
+		socket.send(msg)
+		return true
+	}
+
+
+	function resetCountDown() {
+		document.getElementById('countdown-clock').classList.remove('blink');
+		document.getElementById('countdown-clock').innerHTML = "";
+		document.getElementById('countdown-text').innerHTML = "";
+		clock.countDownEnded = false;
+	}
+
+	function onWebSocketMessage(e) {
+		let data = JSON.parse(e.data);
+		if (data.hasOwnProperty('absoluteTime'))
+			clock.absoluteTime = data.absoluteTime;
+		if (data.hasOwnProperty('playing'))
+			clock.playing = data.playing;
+		if (data.hasOwnProperty('description'))
+			clock.description = data.description;
+
+		resetCountDown();
+
+		if (!clock.playing) {
+			document.getElementById('countdown').hidden = true;
+			document.getElementById('date').hidden = false;
+			return;
+		}
+
+		document.getElementById('date').hidden = true;
+		document.getElementById('countdown').hidden = false;
+		let absTime = clock.absoluteTime.split(':').map(e => parseInt(e));
+		let now = new Date();
+		let targetDate = new Date();
+		targetDate.setHours(absTime[0]);
+		targetDate.setMinutes(absTime[1]);
+		targetDate.setSeconds(absTime[2]);
+
+		//Target time is next day
+		if (targetDate < now)
+			targetDate.setDate(targetDate.getDate() + 1)
+
+		clock.targetDate = targetDate;
+
+	}
+
+	function date_heure() {
+		let now = new Date();
+		let annee = now.getFullYear();
+		let moi = now.getMonth();
+
+		let j = now.getDate();
+		let jour = now.getDay();
+		let h = now.getHours().toString().padStart(2, '0');
+		let m = now.getMinutes().toString().padStart(2, '0');
+		let s = now.getSeconds().toString().padStart(2, '0');
+
+		document.getElementById('date').innerHTML = jours[jour] + ' ' + j + ' ' + mois[moi] + ' ' + annee;
+		document.getElementById('clock').innerHTML = h + ':' + m + ':' + s;
+
+		if (clock.playing) {
+			let diffTime = Math.floor((clock.targetDate - now) / 1000);
+			if (diffTime > 0) {
+				let sDiff = (diffTime % 60).toString().padStart(2, '0');
+				let mDiff = (Math.floor(diffTime / 60) % 60).toString().padStart(2, '0');
+				let hDiff = Math.floor(diffTime / 3600).toString().padStart(2, '0');
+				document.getElementById('countdown-text').innerHTML = clock.description;
+				document.getElementById('countdown-clock').innerHTML = hDiff + ':' + mDiff + ':' + sDiff;
+			}
+			//End timer
+			else {
+				document.getElementById('countdown-clock').innerHTML = '00:00:00';
+				document.getElementById('countdown-clock').classList.add('blink');
+				if (clock.countDownEnded == false) {
+					clock.countDownEnded = true;
+					setTimeout(() => {
+						send('{"playing": false}')
+					}, 60000)
+				}
+			}
+
+		}
+
+	}
+
+	reconnect();
+
+	setInterval(date_heure, 200);
+</script>
+
+</html>

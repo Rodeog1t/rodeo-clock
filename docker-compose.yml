@@ -1,0 +1,51 @@
+version: "3"
+services:
+  apache:
+    build:
+      context: .
+      dockerfile: apache/Dockerfile
+    ports:
+      - "80:80"
+    networks:
+      - rodeoprod-dev-clock
+    volumes:
+      - html:/var/www/html/:ro
+    restart: "unless-stopped"
+  nodejs:
+    build:
+      context: .
+      dockerfile: nodejs/Dockerfile
+    ports:
+      - "81:81"
+    networks:
+      - rodeoprod-dev-clock
+    volumes:
+      - scripts:/scripts/src:ro
+networks:
+  rodeoprod-dev-clock:
+    driver: bridge
+volumes:
+  html:
+    driver: local
+    driver_opts:
+      #Local mount
+      #type: none
+      #o: bind
+      #device: ${LOCAL_PATH}\\html
+      
+      #SMB mount
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD}"
+      device: "${SMB_PATH}\\html"
+  scripts:
+    driver: local
+    driver_opts:
+      #Local mount
+      #type: none
+      #o: bind
+      #device: ${LOCAL_PATH}\\scripts
+      
+      #SMB mount
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD}"
+      device: "${SMB_PATH}\\scripts"

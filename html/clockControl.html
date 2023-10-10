@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8">
+    <title>Clock control</title>
+    <style>
+        input[type="time"]::-webkit-calendar-picker-indicator {
+            filter: invert(100%);
+        }
+
+        body {
+            background-color: black;
+            color: white;
+            text-align: center;
+            font-size: 2em;
+        }
+
+        input {
+            background-color: black;
+            border-radius: 30px;
+            color: white;
+            font-size: 1em;
+            padding: 7px;
+        }
+
+        button {
+            background-color: green;
+            border-radius: 90px;
+            color: white;
+            font-size: 1em;
+            padding: 7px;
+            cursor: pointer;
+            width: 90px;
+            height: 90px;
+        }
+
+        #stop {
+            background-color: red;
+        }
+
+        div {
+            background-color: darkorange;
+            margin-bottom: 50px;
+            padding: 20px;
+            font-size: 2em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div>HORLOGE REGIE</div>
+    <label for="abs-time">Compte à rebours (fixe)</label>
+    <input id="abs-time" type="time" name="abs-time" step="2" />
+    <button onclick="sendStart(true)">Start</button>
+    <br />
+    <label for="rel-time">Compte à rebours (relatif)</label>
+    <input id="rel-time" type="time" name="rel-time" step="2" value="00:03:00" />
+    <button onclick="sendStart(false)">Start</button>
+    <br />
+    <label for="description">Texte à afficher</label>
+    <br />
+    <input type="text" id="description" name="description" size="30">
+    <br />
+    <br />
+    <button id="stop" onclick="sendStop()">Stop</button>
+
+</body>
+
+<script>
+    const protocol = (window.location.protocol === 'https:') ? "wss://" : "ws://";
+    const ip = window.location.hostname;
+    const port = 81;
+    var socket = null;
+    var connecting = false;
+    var clock = {
+        absoluteTime: "",
+        playing: null,
+        description: ""
+    }
+
+    async function reconnect(msg) {
+        if (!ip) return false
+        if (!port) return false
+
+        if (connecting) return false
+        connecting = true;
+
+        try {
+            if (socket && (socket.readyState == WebSocket.OPEN)) {
+                socket.close()
+                while (socket.readyState != WebSocket.CLOSED)
+                    await new Promise(resolve => setTimeout(resolve, 200));
+            }
+
+            //Socket null opening new one
+            socket = new WebSocket(protocol + ip + ":" + port, ["clock-control"]);
+
+            socket.onerror = function (e) {
+                connecting = false;
+                onWebSocketError(e)
+            };
+
+            socket.onopen = function (e) {
+                connecting = false;
+                //If msg need to be send 
+                if (msg)
+                    this.send(msg);
+                onWebSocketOpen(e)
+
+                this.onclose = function (e) {
+                    onWebSocketClose(e)
+                };
+
+                this.onmessage = function (e) {
+                    onWebSocketMessage(e)
+                };
+            };
+            return true
+        }
+        catch (e) {
+            connecting = false;
+            onWebSocketError(e)
+            return false
+        }
+    }
+
+    function onWebSocketError(e) {
+        console.error(e);
+        reconnect();
+    }
+
+    function onWebSocketOpen(e) {
+    }
+
+    function onWebSocketClose(e) {
+        reconnect();
+    }
+
+    function onWebSocketMessage(e) {
+        let data = JSON.parse(e.data);
+        if (data.hasOwnProperty('absoluteTime')) {
+            clock.absoluteTime = data.absoluteTime;
+            document.querySelector("input#abs-time").value = clock.absoluteTime;
+        }
+        if (data.hasOwnProperty('playing'))
+            clock.playing = data.playing;
+
+        if (data.hasOwnProperty('description')) {
+            clock.description = data.description;
+            //document.querySelector("input#description").value = clock.description;
+        }
+    }
+
+    function isConnected() {
+        if (!socket || (socket.readyState != WebSocket.OPEN))
+            return false
+        return true
+    }
+
+    async function send(msg) {
+        if (!isConnected())
+            return false
+        socket.send(msg)
+        return true
+    }
+
+    function sendStop() {
+        send('{"absoluteTime": "' + document.querySelector("input#abs-time").value + '", "playing": false, "description": ""}')
+    }
+
+    function sendStart(absoluteTimeOn) {
+        if (absoluteTimeOn)
+            send('{"absoluteTime": "' + document.querySelector("input#abs-time").value + '", "playing": true, "description": "' + document.querySelector("input#description").value.replace(/[\"]/g, '\\"') + '"}')
+        else {
+            let relTime = document.querySelector("input#rel-time").value;
+            let time = relTime.split(':').map(e => parseInt(e));
+            let now = new Date();
+
+            let seconds = now.getSeconds() + time[2];
+            let minutes = (seconds > 59) ? 1 : 0;
+            seconds = seconds % 60;
+
+            minutes = minutes + now.getMinutes() + time[1];
+            let hours = (minutes > 59) ? 1 : 0;
+            minutes = minutes % 60;
+
+            hours = hours + now.getHours() + time[0];
+            hours = hours % 24;
+
+            let absTime = hours.toString().padStart(2, '0') + ":" + minutes.toString().padStart(2, '0') + ":" + seconds.toString().padStart(2, '0');
+            send('{"absoluteTime": "' + absTime + '", "playing": true, "description": "' + document.querySelector("input#description").value.replace(/[\"]/g, '\\"') + '"}')
+
+        }
+    }
+
+    reconnect();
+
+
+</script>
+
+
+</html>
